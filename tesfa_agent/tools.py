@@ -9,6 +9,8 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from duckduckgo_search import DDGS
 import google.generativeai as genai
+from dotenv import load_dotenv
+load_dotenv()
 
 
 _conn = None
@@ -26,8 +28,8 @@ def get_supabase_client():
             dbname=os.getenv("SUPABASE_DB"),
             user=os.getenv("SUPABASE_USER"),
             password=os.getenv("SUPABASE_PASSWORD"),
-            port="5432",
-            sslmode="require"
+            port=os.getenv("SUPABASE_PORT", "5432"),
+            sslmode="disable"
         )
         _cur = _conn.cursor()
         print("[INFO] Connected to Supabase Postgres")
