@@ -8,7 +8,7 @@ from typing import List, Dict, Optional
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from duckduckgo_search import DDGS
-import google.generativeai as genai
+from litellm import completion as litellm_completion
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -105,7 +105,7 @@ def retrieve_context(query: str) -> List[Dict]:
     return contexts[:top_k]
 def predict_health_risk(context: str, question: str) -> Dict:
     """
-    Uses BioGPT for medical knowledge + Gemini for JSON formatting.
+    Uses BioGPT for medical knowledge + Ollama for JSON formatting.
     Handles missing context gracefully.
     """
     try:
@@ -144,23 +144,41 @@ Rules:
 - NEVER return empty lists — make reasonable assumptions
 """
         
-        genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-        gemini_response = gemini_model.generate_content(gemini_prompt)
-        gemini_text = gemini_response.text.strip()
-        print(f"Gemini Formatted Output:\n{gemini_text}\n{'='*50}")
+        ollama_response = litellm_completion(
+            model="ollama_chat/llama3.2",
+            messages=[{"role": "user", "content": gemini_prompt}],
+            api_base="http://localhost:11434"
+        )
+        gemini_text = ollama_response.choices[0].message.content.strip()
+        print(f"Ollama Formatted Output:\n{gemini_text}\n{'='*50}")
         json_match = re.search(r'\{.*\}', gemini_text, re.DOTALL)
         if not json_match:
-            raise ValueError("Gemini did not return JSON")
+            raise ValueError("Ollama did not return JSON")
         json_str = json_match.group(0)
-        json_str = json_str.replace("'", '"')
+        # Fix single quotes
+        json_str = re.sub(r"(?<!\w)'|'(?!\w)", '"', json_str)
+        # Fix trailing commas before } or ]
         json_str = re.sub(r',\s*([\}\]])', r'\1', json_str)
-        parsed = json.loads(json_str)
+        # Fix unescaped newlines and tabs inside string values
+        json_str = re.sub(r'(?<!\\)\n', ' ', json_str)
+        json_str = re.sub(r'(?<!\\)\t', ' ', json_str)
+        # Collapse multiple spaces
+        json_str = re.sub(r' {2,}', ' ', json_str)
+        # Attempt 1: standard json.loads
+        try:
+            parsed = json.loads(json_str)
+        except json.JSONDecodeError:
+            # Attempt 2: ast.literal_eval
+            import ast
+            try:
+                parsed = ast.literal_eval(json_str)
+            except Exception:
+                raise ValueError(f"Could not parse Ollama JSON output: {json_str[:200]}")
         output = {
-            "risk_level": "Unknown",
-            "diseases": ["General morbidity"],
-            "reason": "Post-conflict health risks",
-            "recommendations": ["Conduct health assessment", "Strengthen surveillance"]
+            "risk_level": parsed.get("risk_level", "High"),
+            "diseases": parsed.get("diseases", ["General morbility"]),
+            "reason": parsed.get("reason", "Post-conflict health risks"),
+            "recommendations": parsed.get("recommendations", ["Deploy emergency medical teams", "Initiate rapid assessment"])
         }
         key_mapping = {
             "risk_level": ["risk_level"],
