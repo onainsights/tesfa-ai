@@ -143,7 +143,6 @@ Rules:
 - If diseases are not listed, infer from context
 - NEVER return empty lists — make reasonable assumptions
 """
-        
         ollama_response = litellm_completion(
             model="ollama_chat/llama3.2",
             messages=[{"role": "user", "content": gemini_prompt}],
@@ -155,8 +154,6 @@ Rules:
         if not json_match:
             raise ValueError("Ollama did not return JSON")
         json_str = json_match.group(0)
-        # Fix single quotes
-        json_str = re.sub(r"(?<!\w)'|'(?!\w)", '"', json_str)
         # Fix trailing commas before } or ]
         json_str = re.sub(r',\s*([\}\]])', r'\1', json_str)
         # Fix unescaped newlines and tabs inside string values
@@ -168,34 +165,17 @@ Rules:
         try:
             parsed = json.loads(json_str)
         except json.JSONDecodeError:
-            # Attempt 2: ast.literal_eval
             import ast
             try:
                 parsed = ast.literal_eval(json_str)
             except Exception:
                 raise ValueError(f"Could not parse Ollama JSON output: {json_str[:200]}")
-        output = {
+        return {
             "risk_level": parsed.get("risk_level", "High"),
-            "diseases": parsed.get("diseases", ["General morbility"]),
+            "diseases": parsed.get("diseases", ["General morbidity"]),
             "reason": parsed.get("reason", "Post-conflict health risks"),
             "recommendations": parsed.get("recommendations", ["Deploy emergency medical teams", "Initiate rapid assessment"])
         }
-        key_mapping = {
-            "risk_level": ["risk_level"],
-            "diseases": ["diseases"],
-            "reason": ["reason"],
-            "recommendations": ["recommendations"]
-        }
-        for out_key, possible_keys in key_mapping.items():
-            for p_key in possible_keys:
-                if p_key in parsed:
-                    output[out_key] = parsed[p_key]
-                    break
-        if not isinstance(output["diseases"], list):
-            output["diseases"] = [str(output["diseases"])]
-        if not isinstance(output["recommendations"], list):
-            output["recommendations"] = [str(output["recommendations"])]
-        return output
     except Exception as e:
         print(f"Final Error: {e}")
         return {
