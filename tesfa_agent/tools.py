@@ -144,9 +144,10 @@ Rules:
 - NEVER return empty lists — make reasonable assumptions
 """
         ollama_response = litellm_completion(
-            model="ollama_chat/llama3.2",
+            model="openai/gemma3:27b",
             messages=[{"role": "user", "content": gemini_prompt}],
-            api_base="http://localhost:11434"
+            api_base=os.getenv("OLLAMA_API_BASE"),
+            api_key=os.getenv("OLLAMA_API_KEY")
         )
         gemini_text = ollama_response.choices[0].message.content.strip()
         print(f"Ollama Formatted Output:\n{gemini_text}\n{'='*50}")
