@@ -144,7 +144,7 @@ Rules:
 - NEVER return empty lists — make reasonable assumptions
 """
         ollama_response = litellm_completion(
-            model="openai/gemma3:27b",
+            model="openai/gemma4:31b",
             messages=[{"role": "user", "content": gemini_prompt}],
             api_base=os.getenv("OLLAMA_API_BASE"),
             api_key=os.getenv("OLLAMA_API_KEY")
