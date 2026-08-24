@@ -3,11 +3,9 @@ import re
 import json
 import torch
 import psycopg2
-import time
 from typing import List, Dict, Optional
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from duckduckgo_search import DDGS
 from litellm import completion as litellm_completion
 from dotenv import load_dotenv
 load_dotenv()
@@ -34,9 +32,9 @@ def get_supabase_client():
         _cur = _conn.cursor()
         print("[INFO] Connected to Supabase Postgres")
     if _embedding_model is None:
-
         _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     return _cur, _embedding_model
+
 def get_bio_gpt():
     global _bio_gpt_model, _bio_gpt_tokenizer
     if _bio_gpt_model is None:
@@ -49,18 +47,17 @@ def get_bio_gpt():
         else:
             print("BioGPT loaded on CPU.")
     return _bio_gpt_model, _bio_gpt_tokenizer
+
 def retrieve_context(query: str) -> List[Dict]:
     """
-    Hybrid retriever: queries Supabase pgvector first,
-    falls back to web search if results are weak.
-    Returns merged results from both sources.
+    Retrieves context from Supabase pgvector using semantic similarity search.
+    Returns top_k most relevant conflict health documents.
     """
     contexts = []
     cur, model = get_supabase_client()
     query_embedding = model.encode([query])[0].tolist()
-    top_k = 3 
-    region = None 
-   
+    top_k = 3
+
     cur.execute(
         """
         SELECT id, content, metadata
@@ -79,30 +76,10 @@ def retrieve_context(query: str) -> List[Dict]:
             "region": metadata.get("region", "unknown"),
             "type": "supabase"
         })
-    supabase_results_count = len(results)
-    supabase_has_good_results = (
-        supabase_results_count >= 2
-        and any(len(doc["content"]) > 200 for doc in contexts)
-    )
-   
-    if not supabase_has_good_results:
-        print(f"[INFO] Supabase results weak — searching web for: '{query}'")
-        try:
-            with DDGS() as ddgs:
-                ddgs_results = ddgs.text(query, max_results=top_k)
-                for r in ddgs_results:
-                    contexts.append({
-                        "content": r.get("body", "")[:2000],
-                        "source": r.get("href", "web_search"),
-                        "region": region or "global",
-                        "type": "web"
-                    })
-                    time.sleep(0.5)
-        except Exception as e:
-            print(f"[ERROR] Web search failed: {e}")
-    print(f"[INFO] Retrieved {len(contexts)} contexts "
-          f"({supabase_results_count} from Supabase, {len(contexts)-supabase_results_count} from web)")
+
+    print(f"[INFO] Retrieved {len(contexts)} contexts from Supabase")
     return contexts[:top_k]
+
 def predict_health_risk(context: str, question: str) -> Dict:
     """
     Uses BioGPT for medical knowledge + Ollama for JSON formatting.
@@ -162,7 +139,6 @@ Rules:
         json_str = re.sub(r'(?<!\\)\t', ' ', json_str)
         # Collapse multiple spaces
         json_str = re.sub(r' {2,}', ' ', json_str)
-        # Attempt 1: standard json.loads
         try:
             parsed = json.loads(json_str)
         except json.JSONDecodeError:
